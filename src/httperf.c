@@ -87,7 +87,7 @@
 #  include <openssl/rand.h>
 #endif
 
-#define RATE_INTERVAL	5.0
+#define RATE_INTERVAL	1.0
 
 const char     *prog_name;
 int             verbose;

@@ -58,6 +58,14 @@
 #define BIN_WIDTH	1e-3
 #define NUM_BINS	((u_int) (MAX_LIFETIME / BIN_WIDTH))
 
+/*
+ * Increase this if it does not cover at least 50% of all response times.
+ */
+#define R_MAX_RATE	4096	/* max. rate. in requests/seconds */
+#define R_BIN_WIDTH	1
+#define R_NUM_BINS	((u_int) (R_MAX_RATE / R_BIN_WIDTH))
+
+
 static struct {
 	u_long           num_conns_issued;	/* total # of connections * issued */
 	u_long           num_replies[6];	/* completion count per status class */
@@ -92,6 +100,7 @@ static struct {
 
 	u_long           num_responses;
 	Time            call_response_sum;	/* sum of response times */
+    Time            call_response_time_max; /* maximum response time */
 
 	Time            call_xfer_sum;	/* sum of response times */
 
@@ -105,6 +114,8 @@ static struct {
 
 	u_int           conn_lifetime_hist[NUM_BINS];	/* histogram of
 													 * connection lifetimes */
+    u_int           response_time_hist[NUM_BINS];   /* histogram of response times */
+    u_int           reply_rate_hist[R_NUM_BINS];   /* histogram of reply rates */
 } basic;
 
 static u_long    num_active_conns;
@@ -115,14 +126,20 @@ perf_sample(Event_Type et, Object * obj, Any_Type reg_arg, Any_Type call_arg)
 {
 	Time            weight = call_arg.d;
 	double          rate;
+    u_int           bin;
 
 	assert(et == EV_PERF_SAMPLE);
 
 	rate = weight * num_replies;
 
-	if (verbose)
+	if (verbose > 1)
 		printf("reply-rate = %-8.1f\n", rate);
 
+    // create histogram of reply rates
+    bin = rate * R_NUM_BINS/R_MAX_RATE;
+    if (bin >= R_NUM_BINS)
+        bin = R_NUM_BINS;
+    ++basic.reply_rate_hist[bin];
 	basic.reply_rate_sum += rate;
 	basic.reply_rate_sum2 += SQUARE(rate);
 	if (rate < basic.reply_rate_min)
@@ -272,12 +289,21 @@ recv_start(Event_Type et, Object * obj, Any_Type reg_arg, Any_Type call_arg)
 {
 	Call           *c = (Call *) obj;
 	Time            now;
+    u_int           bin;
 
 	assert(et == EV_CALL_RECV_START && object_is_call(c));
 
 	now = timer_now();
 
-	basic.call_response_sum += now - c->basic.time_send_start;
+    Time response_time = (now - c->basic.time_send_start);
+    // create histogram of response times
+    bin = response_time * NUM_BINS/MAX_LIFETIME;
+    if (bin >= NUM_BINS)
+        bin = NUM_BINS;
+    ++basic.response_time_hist[bin];
+    if (response_time > basic.call_response_time_max)
+        basic.call_response_time_max = response_time;
+    basic.call_response_sum += response_time;
 	c->basic.time_recv_start = now;
 	++basic.num_responses;
 
@@ -364,8 +390,12 @@ dump(void)
 		0.0, footer_size = 0.0;
 	Time            lifetime_avg = 0.0, lifetime_stddev =
 		0.0, lifetime_median = 0.0;
-	double          reply_rate_avg = 0.0, reply_rate_stddev = 0.0;
-	int             i;
+    Time            replytime_median = 0.0, replytime_66 = 0.0, replytime_75 = 0.0, replytime_80 = 0.0,
+            replytime_90 = 0.0, replytime_95 = 0.0, replytime_98 = 0.0, replytime_99 = 0.0, replytime_100 = 0.0;
+    double          reply_rate_avg = 0.0, reply_rate_stddev = 0.0;
+    Time            replyrate_median = 0.0, replyrate_66 = 0.0, replyrate_75 = 0.0, replyrate_80 = 0.0,
+            replyrate_90 = 0.0, replyrate_95 = 0.0, replyrate_98 = 0.0, replyrate_99 = 0.0, replyrate_100 = 0.0;
+    int             i;
 	u_long          total_replies = 0;
 	Time            delta, user, sys;
 	u_wide          total_size;
@@ -377,7 +407,7 @@ dump(void)
 
 	delta = test_time_stop - test_time_start;
 
-	if (verbose > 1) {
+	if (verbose) {
 		printf("\nConnection lifetime histogram (time in ms):\n");
 		for (i = 0; i < NUM_BINS; ++i)
 			if (basic.conn_lifetime_hist[i]) {
@@ -448,6 +478,28 @@ dump(void)
 			reply_rate_stddev = STDDEV(basic.reply_rate_sum,
 									   basic.reply_rate_sum2,
 									   basic.num_reply_rates);
+        // determine reply rate percentiles
+        n = 0;
+        int numbucks = 0;
+        for (i = 0; i < R_NUM_BINS; ++i) {
+            n += basic.reply_rate_hist[i];
+            if (n >= (float) (0.5 * basic.num_reply_rates) && replyrate_median == 0.0)
+                replyrate_median = i * R_BIN_WIDTH;
+            if (n >= (float) (0.66 * basic.num_reply_rates) && replyrate_66 == 0.0)
+                replyrate_66 = i * R_BIN_WIDTH;
+            if (n >= (float) (0.75 * basic.num_reply_rates) && replyrate_75 == 0.0)
+                replyrate_75 = i * R_BIN_WIDTH;
+            if (n >= (float) (0.8 * basic.num_reply_rates) && replyrate_80 == 0.0)
+                replyrate_80 = i * R_BIN_WIDTH;
+            if (n >= (float) (0.9 * basic.num_reply_rates) && replyrate_90 == 0.0)
+                replyrate_90 = i * R_BIN_WIDTH;
+            if (n >= (float) (0.95 * basic.num_reply_rates) && replyrate_95 == 0.0)
+                replyrate_95 = i * R_BIN_WIDTH;
+            if (n >= (float) (0.98 * basic.num_reply_rates) && replyrate_98 == 0.0)
+                replyrate_98 = i * R_BIN_WIDTH;
+            if (n >= (float) (0.99 * basic.num_reply_rates) && replyrate_99 == 0.0)
+                replyrate_99 = i * R_BIN_WIDTH;
+        }
 	}
 	printf
 		("Reply rate [replies/s]: min %.1f avg %.1f max %.1f stddev %.1f "
@@ -455,14 +507,52 @@ dump(void)
 		 basic.num_reply_rates > 0 ? basic.reply_rate_min : 0.0,
 		 reply_rate_avg, basic.reply_rate_max, reply_rate_stddev,
 		 basic.num_reply_rates);
+    if (basic.num_reply_rates > 0 && verbose)
+        printf("\nPercentages of the replies served at a given rate:\n"
+                       "   50%%: %8.0f\n   66%%: %8.0f\n   75%%: %8.0f\n"
+                       "   80%%: %8.0f\n   90%%: %8.0f\n   95%%: %8.0f\n"
+                       "   98%%: %8.0f\n   99%%: %8.0f\n  100%%: %8.0f\n\n",
+               replyrate_median, replyrate_66, replyrate_75,
+               replyrate_80, replyrate_90, replyrate_95,
+               replyrate_98, replyrate_99, basic.reply_rate_max);
 
-	if (basic.num_responses > 0)
-		resp_time = basic.call_response_sum / basic.num_responses;
+	if (basic.num_responses > 0) {
+        resp_time = basic.call_response_sum / basic.num_responses;
+        // determine response time percentiles
+        n = 0;
+        int numbucks = 0;
+        for (i = 0; i < NUM_BINS; ++i) {
+            n += basic.response_time_hist[i];
+            if (n >= (float) (0.5 * basic.num_responses) && replytime_median == 0.0)
+                replytime_median = i * BIN_WIDTH;
+            if (n >= (float) (0.66 * basic.num_responses) && replytime_66 == 0.0)
+                replytime_66 = i * BIN_WIDTH;
+            if (n >= (float) (0.75 * basic.num_responses) && replytime_75 == 0.0)
+                replytime_75 = i * BIN_WIDTH;
+            if (n >= (float) (0.8 * basic.num_responses) && replytime_80 == 0.0)
+                replytime_80 = i * BIN_WIDTH;
+            if (n >= (float) (0.9 * basic.num_responses) && replytime_90 == 0.0)
+                replytime_90 = i * BIN_WIDTH;
+            if (n >= (float) (0.95 * basic.num_responses) && replytime_95 == 0.0)
+                replytime_95 = i * BIN_WIDTH;
+            if (n >= (float) (0.98 * basic.num_responses) && replytime_98 == 0.0)
+                replytime_98 = i * BIN_WIDTH;
+            if (n >= (float) (0.99 * basic.num_responses) && replytime_99 == 0.0)
+                replytime_99 = i * BIN_WIDTH;
+        }
+    }
 	if (total_replies > 0)
 		xfer_time = basic.call_xfer_sum / total_replies;
 	printf("Reply time [ms]: response %.1f transfer %.1f\n",
 		   1e3 * resp_time, 1e3 * xfer_time);
-
+    if (total_replies > 1 && verbose)
+        printf("\nPercentages of the requests served within a certain time (ms) :\n"
+                       "   50%%: %8.0f\n   66%%: %8.0f\n   75%%: %8.0f\n"
+                       "   80%%: %8.0f\n   90%%: %8.0f\n   95%%: %8.0f\n"
+                       "   98%%: %8.0f\n   99%%: %8.0f\n  100%%: %8.0f\n\n",
+               replytime_median * 1000, replytime_66 * 1000, replytime_75 * 1000,
+               replytime_80 * 1000, replytime_90 * 1000, replytime_95 * 1000,
+               replytime_98 * 1000, replytime_99 * 1000, basic.call_response_time_max * 1000);
 	if (total_replies) {
 		hdr_size = basic.hdr_bytes_received / total_replies;
 		reply_size = basic.reply_bytes_received / total_replies;
