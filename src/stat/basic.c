@@ -61,7 +61,7 @@
 /*
  * Increase this if it does not cover at least 50% of all response times.
  */
-#define R_MAX_RATE	4096	/* max. rate. in requests/seconds */
+#define R_MAX_RATE	4096	/* max. rate. in requests/second */
 #define R_BIN_WIDTH	1
 #define R_NUM_BINS	((u_int) (R_MAX_RATE / R_BIN_WIDTH))
 
@@ -480,7 +480,6 @@ dump(void)
 									   basic.num_reply_rates);
         // determine reply rate percentiles
         n = 0;
-        int numbucks = 0;
         for (i = 0; i < R_NUM_BINS; ++i) {
             n += basic.reply_rate_hist[i];
             if (n >= (float) (0.5 * basic.num_reply_rates) && replyrate_median == 0.0)
@@ -508,10 +507,10 @@ dump(void)
 		 reply_rate_avg, basic.reply_rate_max, reply_rate_stddev,
 		 basic.num_reply_rates);
     if (basic.num_reply_rates > 0 && verbose)
-        printf("\nPercentages of the replies served at a given rate:\n"
-                       "   50%%: %8.0f\n   66%%: %8.0f\n   75%%: %8.0f\n"
-                       "   80%%: %8.0f\n   90%%: %8.0f\n   95%%: %8.0f\n"
-                       "   98%%: %8.0f\n   99%%: %8.0f\n  100%%: %8.0f\n\n",
+        printf("Percentages of the replies served at a given rate:\n"
+                       "   50%%: %.0f\n   66%%: %.0f\n   75%%: %.0f\n"
+                       "   80%%: %.0f\n   90%%: %.0f\n   95%%: %.0f\n"
+                       "   98%%: %.0f\n   99%%: %.0f\n  100%%: %.0f\n\n",
                replyrate_median, replyrate_66, replyrate_75,
                replyrate_80, replyrate_90, replyrate_95,
                replyrate_98, replyrate_99, basic.reply_rate_max);
@@ -520,7 +519,6 @@ dump(void)
         resp_time = basic.call_response_sum / basic.num_responses;
         // determine response time percentiles
         n = 0;
-        int numbucks = 0;
         for (i = 0; i < NUM_BINS; ++i) {
             n += basic.response_time_hist[i];
             if (n >= (float) (0.5 * basic.num_responses) && replytime_median == 0.0)
@@ -546,10 +544,10 @@ dump(void)
 	printf("Reply time [ms]: response %.1f transfer %.1f\n",
 		   1e3 * resp_time, 1e3 * xfer_time);
     if (total_replies > 1 && verbose)
-        printf("\nPercentages of the requests served within a certain time (ms) :\n"
-                       "   50%%: %8.0f\n   66%%: %8.0f\n   75%%: %8.0f\n"
-                       "   80%%: %8.0f\n   90%%: %8.0f\n   95%%: %8.0f\n"
-                       "   98%%: %8.0f\n   99%%: %8.0f\n  100%%: %8.0f\n\n",
+        printf("Percentages of the requests served within a certain time (ms) :\n"
+                       "   50%%: %.0f\n   66%%: %.0f\n   75%%: %.0f\n"
+                       "   80%%: %.0f\n   90%%: %.0f\n   95%%: %.0f\n"
+                       "   98%%: %.0f\n   99%%: %.0f\n  100%%: %.0f\n\n",
                replytime_median * 1000, replytime_66 * 1000, replytime_75 * 1000,
                replytime_80 * 1000, replytime_90 * 1000, replytime_95 * 1000,
                replytime_98 * 1000, replytime_99 * 1000, basic.call_response_time_max * 1000);
